@@ -3,6 +3,7 @@ Various Python tools, go to each folder for more info
 
 - [CloudFlare DDNS](cloudflare-ddns/)
 - [DigitalOcean update Firewall](digitalocean-firewall/)
+- [GitHub Actions secrets cli](github-action-secrets/)
 
 ## Requirements
 
