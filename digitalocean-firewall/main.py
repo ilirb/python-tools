@@ -5,9 +5,16 @@ import requests
 
 workdir = os.path.dirname(os.path.abspath(__file__))
 
-with open("{}/settings.json".format(workdir), 'r') as f:
-    r = f.read()
-    conf = json.loads(r)
+try:
+    with open("{}/settings.json".format(workdir), 'r') as f:
+        r = f.read()
+        conf = json.loads(r)
+
+    if "METHOD" not in conf:
+        conf["METHOD"] = "append"
+
+except Exception as err:
+    sys.exit(err)
 
 DO_URI = "https://api.digitalocean.com/v2/"
 headers = {
@@ -102,11 +109,14 @@ def find(lst, key, value):
     return -1
 
 
-def firewall_update_ssh(id):
+def firewall_update_ssh(id, method="append"):
     """Update firewall to include your (dynamic) public IP
 
     Arguments:
         id {str} -- firewall_id
+        method {str} -- Optional.
+            append (default) - adds IP
+            replace - replaces all IP(s) with new IP
 
     Returns:
         bool -- True if success otherwise False
@@ -115,14 +125,26 @@ def firewall_update_ssh(id):
     fw = firewall_get(id)
     ip = get_my_ip()
 
+    _addr = []
+
     _i = find(fw['inbound_rules'], "ports", "22")
-    _addr = fw['inbound_rules'][_i]['sources']['addresses']
 
-    if ip in _addr:
-        print("Already exists")
-        sys.exit(0)
+    if method == "append":
+        if len(fw['inbound_rules'][_i]['sources']) > 0:
+            _addr = fw['inbound_rules'][_i]['sources']['addresses']
 
-    _addr.append(ip)
+            if ip in _addr:
+                print("{} already exists in firewall {}".format(ip, fw['name']))
+                sys.exit(0)
+
+        _addr.append(ip)
+
+    elif method == "replace":
+        _addr = [ip]
+
+    else:
+        sys.exit("Invalid method, define 'append' or 'replace'")
+
     fw['inbound_rules'][_i]['sources']['addresses'] = _addr
 
     '''
@@ -141,4 +163,8 @@ def firewall_update_ssh(id):
 
 
 if __name__ == "__main__":
-    firewall_update_ssh(conf['FIREWALL_ID'])
+    status = firewall_update_ssh(conf['FIREWALL_ID'], method=conf['METHOD'])
+    if status:
+        print("Firewall updated successfully")
+    else:
+        sys.exit("Error updating firewall")
