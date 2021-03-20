@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 import sys
 import argparse
@@ -33,7 +35,7 @@ def enable_versioning(args):
     return bucket
 
 
-def list_file_archived_generations(args):
+def list_blob(args):
     """Lists all the blobs in the bucket with generation."""
     storage_client = storage.Client.from_service_account_json(args.credentials)
 
@@ -42,6 +44,15 @@ def list_file_archived_generations(args):
     for blob in blobs:
         print("{},{},{}".format(blob.name, blob.generation, datetime.fromtimestamp(blob.generation/1000000).strftime('%c')))
 
+
+def delete(args):
+    """Delete a blob."""
+    storage_client = storage.Client.from_service_account_json(args.credentials)
+
+    bucket = storage_client.bucket(args.bucket_name)
+    blob = bucket.blob(args.blob_name)
+
+    blob.delete()
 
 if __name__ == "__main__":
     # https://docs.python.org/3/library/argparse.html
@@ -63,8 +74,13 @@ if __name__ == "__main__":
     parser_enable_ver.set_defaults(func=enable_versioning)
 
     # list bucket
-    parser_enable_list = subparsers.add_parser('list_archive', help="List archived file generations", parents=[base_subparser])
-    parser_enable_list.set_defaults(func=list_file_archived_generations)
+    parser_enable_list = subparsers.add_parser('list', help="List archived file generations", parents=[base_subparser])
+    parser_enable_list.set_defaults(func=list_blob)
+
+    # delete bucket
+    parser_delete = subparsers.add_parser('delete', help="List archived file generations", parents=[base_subparser])
+    parser_delete.add_argument('--blob_name', help='Blob name', required=True)
+    parser_delete.set_defaults(func=delete)
 
     args = parser.parse_args()
     if not args.credentials:
