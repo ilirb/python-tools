@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 from datetime import datetime
 from google.cloud import storage
@@ -6,7 +7,8 @@ from google.cloud import storage
 
 def upload_blob(args):
     """Uploads a file to the bucket."""
-    storage_client = storage.Client()
+    storage_client = storage.Client.from_service_account_json(args.credentials)
+
     bucket = storage_client.bucket(args.bucket_name)
     blob = bucket.blob(args.blob_name)
 
@@ -21,7 +23,7 @@ def upload_blob(args):
 
 def enable_versioning(args):
     """Enable versioning for this bucket."""
-    storage_client = storage.Client()
+    storage_client = storage.Client.from_service_account_json(args.credentials)
 
     bucket = storage_client.get_bucket(args.bucket_name)
     bucket.versioning_enabled = True
@@ -33,7 +35,7 @@ def enable_versioning(args):
 
 def list_file_archived_generations(args):
     """Lists all the blobs in the bucket with generation."""
-    storage_client = storage.Client()
+    storage_client = storage.Client.from_service_account_json(args.credentials)
 
     blobs = storage_client.list_blobs(args.bucket_name, versions=True)
 
@@ -48,6 +50,7 @@ if __name__ == "__main__":
 
     base_subparser = argparse.ArgumentParser(add_help=False)
     base_subparser.add_argument('--bucket_name', help='Bucket name', required=True)
+    base_subparser.add_argument('--credentials', help='Credentials', default=os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
 
     # upload
     parser_upload = subparsers.add_parser('upload', help="Upload blob", parents=[base_subparser])
@@ -64,4 +67,6 @@ if __name__ == "__main__":
     parser_enable_list.set_defaults(func=list_file_archived_generations)
 
     args = parser.parse_args()
+    if not args.credentials:
+        sys.exit("Set --credentials")
     args.func(args)
