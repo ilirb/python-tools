@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 '''
 This is a simple Dynamic DNS updater for Cloudflare domains
@@ -9,6 +9,8 @@ Edit settings.json file with the following information:
     TOKEN = get your API token from CloudFlare
     ZONE_ID = You can find it in Cloudflare Overview tab of your domain
     NAME = List of name(s) of the record(s) you want to keep up to date
+
+    Multiple zones can be defined in settings.json
 
 Requires Python 3 and "requests" library
     "python -m pip install -r requirements.txt" or
@@ -32,39 +34,6 @@ with open("{}/settings.json".format(workdir), 'r') as f:
     conf = json.loads(r)
 
 CF_ENDPOINT = "https://api.cloudflare.com/client/v4/"
-headers = {"Authorization": "Bearer {}".format(conf["TOKEN"])}
-
-r = requests.get("{}user/tokens/verify".format(CF_ENDPOINT), headers=headers)
-if r.status_code != 200:
-    sys.exit("Invalid token")
-
-
-def get_dns_record(name, type):
-    params = {"name": name, "type": type}
-    r = requests.get("{}zones/{}/dns_records".format(CF_ENDPOINT, conf["ZONE_ID"]),
-                     headers=headers,
-                     params=params)
-    if r.status_code == 200:
-        _r = json.loads(r.text)["result"]
-        if len(_r) > 0:
-            return _r[0]
-    sys.exit("Could not get {} dns record, exit".format(name))
-
-
-def update_dns_record(identifier, type, name, content, ttl=1, proxied="true"):
-    data = {"type": type,
-            "name": name,
-            "content": content,
-            "ttl": ttl,
-            "proxied": proxied}
-    headers["Content-Type"] = "application/json"
-    r = requests.put("{}zones/{}/dns_records/{}".format(CF_ENDPOINT, conf["ZONE_ID"], identifier),
-                     headers=headers,
-                     data=json.dumps(data))
-    if r.status_code == 200:
-        return 0
-    else:
-        return 1
 
 
 def get_my_ip():
@@ -80,28 +49,92 @@ def get_my_ip():
             r = requests.get(s)
             if r.status_code == 200:
                 return r.text.rstrip()
-        except:
+        except Exception:
             pass
     sys.exit("Unable to get public IP")
 
 
-def main():
-    myip = get_my_ip()
-    for name in conf["NAMES"]:
-        dns = get_dns_record(name=name, type="A")
+myip = get_my_ip()
 
-        if dns["content"] == myip:
-            print("Record {} is already up to date {}, nothing to do here".format(name, myip))
-        else:
-            r = update_dns_record(dns["id"],
-                                  dns["type"],
-                                  dns["name"],
-                                  myip,
-                                  dns["ttl"],
-                                  dns["proxied"])
-            if r == 0:
-                print("Record {} updated to {}. Great success :)".format(name, myip))
+
+class Cloudflare:
+    def __init__(self, token, zone_id, names):
+        self.token = token
+        self.zone_id = zone_id
+        self.names = names
+
+        self.headers = {"Authorization": "Bearer {}".format(self.token)}
+        r = requests.get("{}user/tokens/verify".format(CF_ENDPOINT), headers=self.headers)
+        if r.status_code != 200:
+            sys.exit("Invalid token for zone: {}".format(self.zone_id))
+
+    def get_dns_record(self, name, type):
+        params = {"name": name, "type": type}
+        r = requests.get("{}zones/{}/dns_records".format(CF_ENDPOINT, self.zone_id),
+                         headers=self.headers,
+                         params=params)
+        if r.status_code == 200:
+            _r = json.loads(r.text)["result"]
+            if len(_r) > 0:
+                return _r[0]
             else:
-                print("Uh oh, could not update {}, :'(".format(name))
+                return None
+
+    def create_dns_record(self, type, name, content, ttl=1, proxied=True):
+        data = {"type": type,
+                "name": name,
+                "content": content,
+                "ttl": ttl,
+                "proxied": proxied}
+        self.headers["Content-Type"] = "application/json"
+        r = requests.post("{}zones/{}/dns_records".format(CF_ENDPOINT, self.zone_id),
+                          headers=self.headers,
+                          data=json.dumps(data))
+        if r.status_code == 200:
+            print("Record {} {} created. Great success :)".format(name, content))
+        else:
+            print("Unable to create record {}: {}".format(name, r.text))
+
+    def update_dns_record(self, identifier, type, name, content, ttl=1, proxied=True):
+        data = {"type": type,
+                "name": name,
+                "content": content,
+                "ttl": ttl,
+                "proxied": proxied}
+        self.headers["Content-Type"] = "application/json"
+        r = requests.put("{}zones/{}/dns_records/{}".format(CF_ENDPOINT, self.zone_id, identifier),
+                         headers=self.headers,
+                         data=json.dumps(data))
+        if r.status_code == 200:
+            print("Record {} updated to {}. Great success :)".format(name, content))
+        else:
+            print("Uh oh, could not update {}; {}'(".format(name, r.text))
+
+    def update_names(self):
+        for name in self.names:
+            record = self.get_dns_record(name, "A")
+
+            if record is None:
+                self.create_dns_record("A", name, myip, 1)
+            elif record["content"] == myip:
+                print("Record {} is already up to date {}, nothing to do here".format(name, myip))
+            else:
+                self.update_dns_record(
+                    record["id"],
+                    record["type"],
+                    record["name"],
+                    myip,
+                    record["ttl"],
+                    record["proxied"]
+                )
+
+
+def main():
+    if "TOKEN" in conf:
+        Cloudflare(conf["TOKEN"], conf["ZONE_ID"], conf["NAMES"]).update_names()
+    else:
+        for zone in conf:
+            Cloudflare(zone["TOKEN"], zone["ZONE_ID"], zone["NAMES"]).update_names()
+
 
 main()
